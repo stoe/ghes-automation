@@ -1,0 +1,17 @@
+on:
+  push:
+    paths:
+      - 'terraform/**/*'
+
+name: Terraform Lint
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - run: brew install terraform@0.11 tflint
+      - name: tflint
+        run: |
+          cd terraform
+          tflint .

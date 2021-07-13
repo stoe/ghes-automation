@@ -1,0 +1,190 @@
+---
+# PLAY *****************************************************************************************************************
+- name: Terraform
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: GitHub Enterprise Server HA
+      block:
+        - name: 'Terraform apply GitHub Enterprise Server HA ({{ terraform_workspace }})'
+          # https://docs.ansible.com/ansible/latest/collections/community/general/terraform_module.html
+          community.general.terraform:
+            project_path: '../terraform/ghes'
+            workspace: '{{ terraform_workspace }}'
+            variables_file: '../vars/{{ terraform_workspace }}.tfvars'
+            state: present
+          register: tf
+
+        - name: Set GitHub Enterprise Server primary host from Elastic IP
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/add_host_module.html
+          add_host:
+            groups: ghes
+            name: primary
+            ansible_host: '{{ tf.outputs.ghes_primary.value.ELASTIC_IP }}'
+            ansible_port: 122
+            ansible_user: admin
+          when:
+            - tf.outputs.ghes_primary is defined
+            - tf.outputs.ghes_primary.value.ELASTIC_IP != ""
+
+        - name: Set GitHub Enterprise Server primary host from public IP
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/add_host_module.html
+          add_host:
+            groups: ghes
+            name: primary
+            ansible_host: '{{ tf.outputs.ghes_primary.value.PUBLIC_IP }}'
+            ansible_port: 122
+            ansible_user: admin
+          when:
+            - tf.outputs.ghes_primary is defined
+            - tf.outputs.ghes_primary.value.ELASTIC_IP == ""
+
+        - name: Set GitHub Enterprise Server replica host from Elastic IP
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/add_host_module.html
+          add_host:
+            groups: ghes
+            name: replica
+            ansible_host: '{{ tf.outputs.ghes_replica.value.ELASTIC_IP }}'
+            ansible_port: 122
+            ansible_user: admin
+          when:
+            - tf.outputs.ghes_replica is defined
+            - tf.outputs.ghes_replica.value.ELASTIC_IP != ""
+
+        - name: Set GitHub Enterprise Server replica host from public IP
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/add_host_module.html
+          add_host:
+            groups: ghes
+            name: replica
+            ansible_host: '{{ tf.outputs.ghes_replica.value.PUBLIC_IP }}'
+            ansible_port: 122
+            ansible_user: admin
+          when:
+            - tf.outputs.ghes_replica is defined
+            - tf.outputs.ghes_replica.value.ELASTIC_IP == ""
+
+      tags:
+        - ghes
+        - ha
+
+    - name: GitHub Enterprise Server backup-utils
+      block:
+        - name: 'Terraform apply GitHub Enterprise Server backup-utils ({{ terraform_workspace }})'
+          # https://docs.ansible.com/ansible/latest/collections/community/general/terraform_module.html
+          community.general.terraform:
+            project_path: '../terraform/backup-utils'
+            workspace: '{{ terraform_workspace }}'
+            variables_file: '../vars/{{ terraform_workspace }}.tfvars'
+            state: present
+          register: tf
+
+        - name: Set GitHub Enterprise Server backup-utils host IP
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/add_host_module.html
+          add_host:
+            groups: utils
+            name: backup
+            ansible_host: '{{ tf.outputs.backup_utils.value.PUBLIC_IP }}'
+            ansible_port: 22
+            ansible_user: admin
+          when: tf.outputs.backup_utils is defined
+
+      tags:
+        - backup
+
+  tags:
+    # if you have hosts defined in `inventory.yml`,
+    # run `ansible-playbook -i inventory.yml ghes.setup.yml --skip-tags terraform`
+    # to skip this play completely
+    - terraform
+
+  # https://docs.ansible.com/ansible/latest/dev_guide/developing_program_flow_modules.html#ansible-no-log
+  # we do not log to not expose sensitive data
+  no_log: true
+
+# PLAY *****************************************************************************************************************
+- name: Setup GitHub Enterprise Server HA (primary)
+  # NOTE: we do not run on 'primary'
+  #       instead we go via GitHub Enterprise API
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: Setup GitHub Enterprise Server HA (primary)
+      block:
+        - name: Setup primary
+          include_role:
+            name: ghes_primary
+            tasks_from: setup
+          vars:
+            github_host: '{{ hostvars.primary.ansible_host }}'
+
+        - name: Apply primary setup
+          include_role:
+            name: ghes_primary
+            tasks_from: apply
+          vars:
+            github_host: '{{ hostvars.primary.ansible_host }}'
+
+      when:
+        - hostvars.primary.ansible_host is defined
+
+  tags:
+    - ghes
+    - ha
+    - primary
+
+# PLAY *****************************************************************************************************************
+- name: Setup GitHub Enterprise Server HA (replica)
+  hosts: replica
+  gather_facts: no
+
+  pre_tasks:
+    - name: Wait for connection
+      include_role:
+        name: ghes_common
+        tasks_from: connection
+      when:
+        - hostvars.primary.ansible_host is defined
+        - hostvars.replica.ansible_host is defined
+
+  tasks:
+    - name: Setup GitHub Enterprise Server HA (replica)
+      include_role:
+        name: ghes_replica
+      vars:
+        github_host: '{{ hostvars.primary.ansible_host }}'
+        replica_host: '{{ hostvars.replica.ansible_host }}'
+      when:
+        - hostvars.primary.ansible_host is defined
+        - hostvars.replica.ansible_host is defined
+
+  tags:
+    - ghes
+    - ha
+    - replica
+
+# PLAY *****************************************************************************************************************
+- name: Setup GitHub Enterprise Server backup-utils
+  hosts: backup
+  gather_facts: no
+
+  pre_tasks:
+    - name: Wait for connection
+      include_role:
+        name: ghes_common
+        tasks_from: connection
+
+  tasks:
+    - name: Setup GitHub Enterprise Server backup-utils
+      include_role:
+        name: ghes_backup_utils
+      vars:
+        github_host: '{{ hostvars.primary.ansible_host }}'
+        backup_host: '{{ hostvars.backup.ansible_host }}'
+      when:
+        - hostvars.primary.ansible_host is defined
+        - hostvars.backup.ansible_host is defined
+
+  tags:
+    - backup

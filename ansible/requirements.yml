@@ -1,0 +1,15 @@
+- src: git+git@github.com:stoe/ansible-role-ghes-common.git
+  version: main
+  name: ghes_common
+
+- src: git+git@github.com:stoe/ansible-role-ghes-primary.git
+  version: main
+  name: ghes_primary
+
+- src: git+git@github.com:stoe/ansible-role-ghes-replica.git
+  version: main
+  name: ghes_replica
+
+- src: git+git@github.com:stoe/ansible-role-ghes-backup-utils.git
+  version: main
+  name: ghes_backup_utils

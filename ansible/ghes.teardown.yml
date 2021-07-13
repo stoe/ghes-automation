@@ -1,0 +1,45 @@
+---
+# PLAY *****************************************************************************************************************
+- name: Terraform
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: Terraform
+      block:
+
+        - name: 'Terraform destroy GitHub Enterprise Server HA ({{ terraform_workspace }})'
+          # https://docs.ansible.com/ansible/latest/collections/community/general/terraform_module.html
+          community.general.terraform:
+            project_path: '../terraform/ghes'
+            workspace: '{{ terraform_workspace }}'
+            variables_file: '../vars/{{ terraform_workspace }}.tfvars'
+            state: absent
+          tags:
+            - ghes
+            - ha
+
+        - name: 'Terraform destroy GitHub Enterprise Server backup-utils ({{ terraform_workspace }})'
+          # https://docs.ansible.com/ansible/latest/collections/community/general/terraform_module.html
+          community.general.terraform:
+            project_path: '../terraform/backup-utils'
+            workspace: '{{ terraform_workspace }}'
+            variables_file: '../vars/{{ terraform_workspace }}.tfvars'
+            state: absent
+          tags:
+            - backup
+
+        - name: 'Terraform destroy GitHub Enterprise Server monitoring ({{ terraform_workspace }})'
+          # https://docs.ansible.com/ansible/latest/collections/community/general/terraform_module.html
+          community.general.terraform:
+            project_path: '../terraform/monitoring-elk'
+            workspace: '{{ terraform_workspace }}'
+            variables_file: '../vars/{{ terraform_workspace }}.tfvars'
+            state: absent
+          tags:
+            - monitoring
+            - elk
+
+      # https://docs.ansible.com/ansible/latest/dev_guide/developing_program_flow_modules.html#ansible-no-log
+      # we do not log to not expose sensitive data
+      no_log: true
